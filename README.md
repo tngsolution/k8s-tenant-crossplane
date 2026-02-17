@@ -107,7 +107,7 @@ This ensures:
 
 ``` yaml
 apiVersion: platform.example.com/v1alpha1
-kind: Tenant
+kind: XTenant
 metadata:
   name: team-devops
 spec:
