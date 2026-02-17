@@ -13,20 +13,58 @@ spec:
     - namespace: "*"
       server: https://kubernetes.default.svc
 
+  # ------------------------------------------------------------------
+  # Cluster-scoped resources allowed
+  # ------------------------------------------------------------------
   clusterResourceWhitelist:
+
+    # Kubernetes core cluster resources
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+
+    # Crossplane core
     - group: apiextensions.crossplane.io
       kind: CompositeResourceDefinition
     - group: apiextensions.crossplane.io
       kind: Composition
+
+    # Crossplane packages
     - group: pkg.crossplane.io
       kind: Provider
-    - group: ""
-      kind: Namespace
-    - group: networking.k8s.io
-      kind: NetworkPolicy
+    - group: pkg.crossplane.io
+      kind: Configuration
+    - group: pkg.crossplane.io
+      kind: Function
 
+  # ------------------------------------------------------------------
+  # Namespace-scoped resources allowed
+  # ------------------------------------------------------------------
   namespaceResourceWhitelist:
+
+    # Core runtime resources (needed by Crossplane Helm chart)
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: ConfigMap
+
+    # Workloads
+    - group: apps
+      kind: Deployment
+
+    # Tenant resources
     - group: ""
       kind: ResourceQuota
     - group: ""
       kind: LimitRange
+    - group: networking.k8s.io
+      kind: NetworkPolicy

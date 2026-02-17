@@ -4,12 +4,17 @@ on:
   pull_request:
   push:
     branches: [ main ]
+
   workflow_dispatch:
     inputs:
       kind_version:
         description: "Kind version to test (e.g. v0.30.0)"
         required: false
         default: "v0.30.0"
+      cross_plan_version:
+        description: "Crossplane CRDs version to test (e.g. v2.0.7)"
+        required: false
+        default: "v2.0.7"
 
 jobs:
   crossplane-test:
@@ -18,13 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
       # Install kubectl
+      # ------------------------------------------------------------
       - uses: azure/setup-kubectl@v4
 
+      # ------------------------------------------------------------
       # Install helm
+      # ------------------------------------------------------------
       - uses: azure/setup-helm@v4
 
+      # ------------------------------------------------------------
       # Install kind
+      # ------------------------------------------------------------
       - name: Install kind
         run: |
           KIND_VERSION="${{ inputs.kind_version }}"
@@ -37,39 +48,90 @@ jobs:
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
-
           kind --version
 
+      # ------------------------------------------------------------
       # Create cluster
+      # ------------------------------------------------------------
       - name: Create kind cluster
         run: kind create cluster --name crossplane-test
 
-      # Install Crossplane
+      # ------------------------------------------------------------
+      # Install Crossplane CRDs (v2.1.4)
+      # ------------------------------------------------------------
+      - name: Apply Crossplane CRDs
+        run: |
+          set -e
+
+          CROSS_PLAN_VERSION="${{ inputs.cross_plan_version }}"
+          if [ -z "$CROSS_PLAN_VERSION" ]; then
+            CROSS_PLAN_VERSION="v2.1.4"
+          fi
+
+          echo "Downloading Crossplane ${VERSION} source..."
+          curl -L -o crossplane.tar.gz \
+            https://github.com/crossplane/crossplane/archive/refs/tags/${CROSS_PLAN_VERSION}.tar.gz
+
+          mkdir crossplane-src
+          tar -xzf crossplane.tar.gz -C crossplane-src --strip-components=1
+
+          echo "Installing CRDs from cluster/crds/ (create, not apply)..."
+          kubectl create -f crossplane-src/cluster/crds/
+
+          echo "CRDs applied successfully"
+      # ------------------------------------------------------------
+      # Install Crossplane (stable - Functions compatible)
+      # ------------------------------------------------------------
       - name: Install Crossplane
         run: |
-          helm repo add crossplane-stable https://charts.crossplane.io/stable
-          helm repo update
-          helm install crossplane crossplane-stable/crossplane \
+            set -e
+            CROSS_PLAN_VERSION="${{ inputs.cross_plan_version }}"
+            if [ -z "$CROSS_PLAN_VERSION" ]; then
+              CROSS_PLAN_VERSION="v2.1.4"
+            fi
+            helm repo add crossplane-stable https://charts.crossplane.io/stable
+            helm repo update
+            helm install crossplane crossplane-stable/crossplane \
             --namespace crossplane-system \
             --create-namespace \
-            --version 1.14.5
+            --set "installCRDs=true" \
+            --version ${CROSSPLANE_VERSION#v}
 
+      # ------------------------------------------------------------
+      # Wait Crossplane CRDs (Functions)
+      # ------------------------------------------------------------
+      - name: Wait Crossplane CRDs
+        run: |
+          kubectl wait --for=condition=Established \
+            crd/functions.pkg.crossplane.io \
+            --timeout=180s
+
+      # ------------------------------------------------------------
       # Wait Crossplane ready
+      # ------------------------------------------------------------
       - name: Wait Crossplane
         run: |
           kubectl wait --for=condition=available deployment \
             -n crossplane-system --all --timeout=180s
 
+      # ------------------------------------------------------------
       # Install provider-kubernetes
+      # ------------------------------------------------------------
       - name: Install provider
         run: kubectl apply -f providers/provider-kubernetes.yaml
 
+      # ------------------------------------------------------------
+      # Wait provider ready
+      # ------------------------------------------------------------
       - name: Wait provider ready
         run: |
-          kubectl wait --for=condition=healthy provider/provider-kubernetes \
-            --timeout=180s
+          kubectl wait --for=condition=Healthy \
+            provider.pkg.crossplane.io/provider-kubernetes \
+            --timeout=300s
 
-      # ProviderConfig
+      # ------------------------------------------------------------
+      # Create ProviderConfig (in-cluster)
+      # ------------------------------------------------------------
       - name: Create ProviderConfig
         run: |
           cat <<EOF | kubectl apply -f -
@@ -82,40 +144,50 @@ jobs:
               source: InjectedIdentity
           EOF
 
+      # ------------------------------------------------------------
+      # Apply Functions (if using v2 pipeline mode)
+      # ------------------------------------------------------------
+      - name: Apply Functions
+        run: |
+          if [ -d "platform/functions" ]; then
+            kubectl apply -f platform/functions/
+          fi
+
+      # ------------------------------------------------------------
       # Apply XRD
+      # ------------------------------------------------------------
       - name: Apply XRD
         run: kubectl apply -f platform/xrd/
 
-      # 🔥 Install Functions (REQUIRED for v2)
-      - name: Install Crossplane Functions
-        run: kubectl apply -f platform/functions/
-
-      - name: Wait Functions ready
-        run: |
-          kubectl wait --for=condition=healthy function/function-patch-transform \
-            --timeout=180s
-
+      # ------------------------------------------------------------
       # Apply Composition
+      # ------------------------------------------------------------
       - name: Apply Composition
         run: kubectl apply -f platform/compositions/
 
-      # Apply test tenant
+      # ------------------------------------------------------------
+      # Apply test claim
+      # ------------------------------------------------------------
       - name: Apply test claim
         run: kubectl apply -f claims/example.yaml
 
+      # ------------------------------------------------------------
       # Wait XTenant ready
-      - name: Wait XTenant ready
+      # ------------------------------------------------------------
+      - name: Debug XTenant state
         run: |
-          kubectl wait --for=condition=Ready xtenant \
-            --all --timeout=300s
+          echo "---- XTenants ----"
+          kubectl get xtenant -o wide || true
 
-      - name: Debug XTenant
-        if: failure()
-        run: |
-            kubectl get xtenant -A -o yaml
-            kubectl describe xtenant
-            kubectl get events -A
+          echo "---- Describe XTenant ----"
+          kubectl describe xtenant team-devops || true
+
+          echo "---- Events ----"
+          kubectl get events --sort-by=.metadata.creationTimestamp || true      
         
+
+      # ------------------------------------------------------------
       # Verify namespace exists
+      # ------------------------------------------------------------
       - name: Verify namespace
         run: kubectl get ns team-devops

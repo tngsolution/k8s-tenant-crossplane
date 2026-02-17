@@ -1,4 +1,4 @@
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xtenants.platform.example.com
@@ -7,9 +7,7 @@ spec:
   names:
     kind: XTenant
     plural: xtenants
-  claimNames:
-    kind: Tenant
-    plural: tenants
+
   versions:
     - name: v1alpha1
       served: true

@@ -1,15 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: crossplane-platform
+  name: crossplane
   namespace: argocd
 spec:
   project: platform
 
   source:
-    repoURL: https://github.com/tngsolution/k8s-tenant-crossplane
-    targetRevision: main
-    path: platform
+    repoURL: https://charts.crossplane.io/stable
+    chart: crossplane
+    targetRevision: 2.1.4
+    helm:
+      releaseName: crossplane
 
   destination:
     server: https://kubernetes.default.svc
@@ -19,3 +21,5 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
