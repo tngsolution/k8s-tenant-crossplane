@@ -82,11 +82,12 @@ jobs:
               source: InjectedIdentity
           EOF
 
-      # Apply platform
-      - name: Apply XRD and Composition
-        run: |
-          kubectl apply -f xrd/
-          kubectl apply -f compositions/
+      # Apply XRD
+      - name: Apply XRD
+        run: kubectl apply -f platform/xrd/
+      # Apply Composition
+      - name: Apply Composition
+        run: kubectl apply -f platform/compositions/
 
       # Apply test tenant
       - name: Apply test claim
