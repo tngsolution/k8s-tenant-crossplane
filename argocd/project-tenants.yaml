@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenants
+  namespace: argocd
+spec:
+  description: Tenant claims (Crossplane consumers)
+
+  sourceRepos:
+    - "*"
+
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+
+  # 🔒 Autoriser uniquement la CRD exposée aux utilisateurs
+  namespaceResourceWhitelist:
+    - group: platform.example.com
+      kind: Tenant
+
+  # 🚫 Bloquer toute ressource cluster-scoped
+  clusterResourceWhitelist: []

@@ -27,10 +27,19 @@ jobs:
       # Install kind
       - name: Install kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ inputs.kind_version }}/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+            KIND_VERSION="${{ inputs.kind_version }}"
 
+            if [ -z "$KIND_VERSION" ]; then
+            KIND_VERSION="v0.22.0"
+            fi
+
+            echo "Using kind version: $KIND_VERSION"
+
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
+            chmod +x ./kind
+            sudo mv ./kind /usr/local/bin/kind
+
+            kind --version          
       # Create cluster
       - name: Create kind cluster
         run: kind create cluster --name crossplane-test

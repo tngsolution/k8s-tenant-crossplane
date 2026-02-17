@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-claims
+  namespace: argocd
+spec:
+  project: tenants
+
+  source:
+    repoURL: https://github.com/tngsolution/k8s-tenant-crossplane
+    targetRevision: main
+    path: claims
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
