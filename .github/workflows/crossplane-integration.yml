@@ -27,19 +27,19 @@ jobs:
       # Install kind
       - name: Install kind
         run: |
-            KIND_VERSION="${{ inputs.kind_version }}"
+          KIND_VERSION="${{ inputs.kind_version }}"
+          if [ -z "$KIND_VERSION" ]; then
+            KIND_VERSION="v0.30.0"
+          fi
 
-            if [ -z "$KIND_VERSION" ]; then
-            KIND_VERSION="v0.22.0"
-            fi
+          echo "Using kind version: $KIND_VERSION"
 
-            echo "Using kind version: $KIND_VERSION"
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
 
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
-            chmod +x ./kind
-            sudo mv ./kind /usr/local/bin/kind
+          kind --version
 
-            kind --version          
       # Create cluster
       - name: Create kind cluster
         run: kind create cluster --name crossplane-test
@@ -50,9 +50,9 @@ jobs:
           helm repo add crossplane-stable https://charts.crossplane.io/stable
           helm repo update
           helm install crossplane crossplane-stable/crossplane \
-          --namespace crossplane-system \
-          --create-namespace \
-          --version 1.14.5
+            --namespace crossplane-system \
+            --create-namespace \
+            --version 1.14.5
 
       # Wait Crossplane ready
       - name: Wait Crossplane
@@ -64,13 +64,12 @@ jobs:
       - name: Install provider
         run: kubectl apply -f providers/provider-kubernetes.yaml
 
-      # Wait provider ready
       - name: Wait provider ready
         run: |
           kubectl wait --for=condition=healthy provider/provider-kubernetes \
             --timeout=180s
 
-      # Create ProviderConfig (in-cluster)
+      # ProviderConfig
       - name: Create ProviderConfig
         run: |
           cat <<EOF | kubectl apply -f -
@@ -86,6 +85,16 @@ jobs:
       # Apply XRD
       - name: Apply XRD
         run: kubectl apply -f platform/xrd/
+
+      # 🔥 Install Functions (REQUIRED for v2)
+      - name: Install Crossplane Functions
+        run: kubectl apply -f platform/functions/
+
+      - name: Wait Functions ready
+        run: |
+          kubectl wait --for=condition=healthy function/function-patch-transform \
+            --timeout=180s
+
       # Apply Composition
       - name: Apply Composition
         run: kubectl apply -f platform/compositions/
@@ -100,6 +109,13 @@ jobs:
           kubectl wait --for=condition=Ready xtenant \
             --all --timeout=300s
 
+      - name: Debug XTenant
+        if: failure()
+        run: |
+            kubectl get xtenant -A -o yaml
+            kubectl describe xtenant
+            kubectl get events -A
+        
       # Verify namespace exists
       - name: Verify namespace
         run: kubectl get ns team-devops
