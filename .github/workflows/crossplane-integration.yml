@@ -1,0 +1,94 @@
+name: Crossplane Integration Test
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      kind_version:
+        description: "Kind version to test (e.g. v0.30.0)"
+        required: false
+        default: "v0.30.0"
+
+jobs:
+  crossplane-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install kubectl
+      - uses: azure/setup-kubectl@v4
+
+      # Install helm
+      - uses: azure/setup-helm@v4
+
+      # Install kind
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ inputs.kind_version }}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      # Create cluster
+      - name: Create kind cluster
+        run: kind create cluster --name crossplane-test
+
+      # Install Crossplane
+      - name: Install Crossplane
+        run: |
+          helm repo add crossplane-stable https://charts.crossplane.io/stable
+          helm repo update
+          helm install crossplane crossplane-stable/crossplane \
+            --namespace crossplane-system \
+            --create-namespace
+
+      # Wait Crossplane ready
+      - name: Wait Crossplane
+        run: |
+          kubectl wait --for=condition=available deployment \
+            -n crossplane-system --all --timeout=180s
+
+      # Install provider-kubernetes
+      - name: Install provider
+        run: kubectl apply -f providers/provider-kubernetes.yaml
+
+      # Wait provider ready
+      - name: Wait provider ready
+        run: |
+          kubectl wait --for=condition=healthy provider/provider-kubernetes \
+            --timeout=180s
+
+      # Create ProviderConfig (in-cluster)
+      - name: Create ProviderConfig
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: kubernetes.crossplane.io/v1alpha1
+          kind: ProviderConfig
+          metadata:
+            name: default
+          spec:
+            credentials:
+              source: InjectedIdentity
+          EOF
+
+      # Apply platform
+      - name: Apply XRD and Composition
+        run: |
+          kubectl apply -f xrd/
+          kubectl apply -f compositions/
+
+      # Apply test tenant
+      - name: Apply test claim
+        run: kubectl apply -f claims/example.yaml
+
+      # Wait XTenant ready
+      - name: Wait XTenant ready
+        run: |
+          kubectl wait --for=condition=Ready xtenant \
+            --all --timeout=300s
+
+      # Verify namespace exists
+      - name: Verify namespace
+        run: kubectl get ns team-devops

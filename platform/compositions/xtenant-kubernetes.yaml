@@ -1,0 +1,188 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xtenant-kubernetes
+spec:
+  compositeTypeRef:
+    apiVersion: platform.example.com/v1alpha1
+    kind: XTenant
+
+  resources:
+
+  # -----------------------------
+  # Namespace
+  # -----------------------------
+  - name: namespace
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: placeholder
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.name
+
+  # -----------------------------
+  # ResourceQuota
+  # -----------------------------
+  - name: quota
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: v1
+            kind: ResourceQuota
+            metadata:
+              name: tenant-quota
+            spec:
+              hard: {}
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
+      - fromFieldPath: spec.quota.cpu
+        toFieldPath: spec.forProvider.manifest.spec.hard.cpu
+      - fromFieldPath: spec.quota.memory
+        toFieldPath: spec.forProvider.manifest.spec.hard.memory
+      - fromFieldPath: spec.quota.pods
+        toFieldPath: spec.forProvider.manifest.spec.hard.pods
+
+  # -----------------------------
+  # LimitRange
+  # -----------------------------
+  - name: limits
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: v1
+            kind: LimitRange
+            metadata:
+              name: tenant-limits
+            spec:
+              limits:
+                - type: Container
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
+      - fromFieldPath: spec.limits.defaultCpu
+        toFieldPath: spec.forProvider.manifest.spec.limits[0].default.cpu
+      - fromFieldPath: spec.limits.defaultMemory
+        toFieldPath: spec.forProvider.manifest.spec.limits[0].default.memory
+      - fromFieldPath: spec.limits.maxCpu
+        toFieldPath: spec.forProvider.manifest.spec.limits[0].max.cpu
+      - fromFieldPath: spec.limits.maxMemory
+        toFieldPath: spec.forProvider.manifest.spec.limits[0].max.memory
+
+  # -----------------------------
+  # Default Deny Ingress
+  # -----------------------------
+  - name: default-deny-ingress
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: default-deny-ingress
+            spec:
+              podSelector: {}
+              policyTypes:
+                - Ingress
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
+
+  # -----------------------------
+  # Default Deny Egress
+  # -----------------------------
+  - name: default-deny-egress
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: default-deny-egress
+            spec:
+              podSelector: {}
+              policyTypes:
+                - Egress
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
+
+  # -----------------------------
+  # Allow DNS (kube-system)
+  # -----------------------------
+  - name: allow-dns
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: allow-dns
+            spec:
+              podSelector: {}
+              policyTypes:
+                - Egress
+              egress:
+                - to:
+                    - namespaceSelector:
+                        matchLabels:
+                          kubernetes.io/metadata.name: kube-system
+                  ports:
+                    - protocol: UDP
+                      port: 53
+                    - protocol: TCP
+                      port: 53
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
+
+  # -----------------------------
+  # Allow Same Namespace
+  # -----------------------------
+  - name: allow-same-namespace
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: allow-same-namespace
+            spec:
+              podSelector: {}
+              policyTypes:
+                - Ingress
+                - Egress
+              ingress:
+                - from:
+                    - podSelector: {}
+              egress:
+                - to:
+                    - podSelector: {}
+    patches:
+      - fromFieldPath: spec.namespace
+        toFieldPath: spec.forProvider.manifest.metadata.namespace
